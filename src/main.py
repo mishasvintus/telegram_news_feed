@@ -3,9 +3,10 @@ from user_handler import UserHandler
 from bot_handler import BotHandler
 
 async def main():
-    # Создаем обработчики
-    user_handler = UserHandler()
-    bot_handler = BotHandler()
+    event_queue = asyncio.Queue()
+
+    user_handler = UserHandler(event_queue)
+    bot_handler = BotHandler(event_queue)
 
     # Запускаем обработчики
     await asyncio.gather(

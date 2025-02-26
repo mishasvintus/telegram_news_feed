@@ -3,7 +3,9 @@ import json
 from telethon import events, TelegramClient
 
 class UserHandler:
-    def __init__(self, config_path="../config/keys.json", channels_path="../config/all_channels.json"):
+    def __init__(self, event_queue, config_path="../config/keys.json", channels_path="../config/channels.json"):
+        self.event_queue = event_queue
+
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
@@ -23,36 +25,37 @@ class UserHandler:
 
     async def handle_channel_message(self, event):
         async with self.lock:
-            print("Пользовательский клиент: получено сообщение из канала.")
+            print("🔷UserHandler🔷: Пользовательский клиент: получено сообщение из канала.")
             try:
-                # Сначала отправляем информацию о канале
                 channel_name = event.chat.title if event.chat else "Неизвестный канал"
                 message_text = f"Сообщение из канала: 🔁 {channel_name}"
                 channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, message_text)
-                print(f"Информация о канале {channel_name} отправлена боту.")
+                print(f"🔷UserHandler🔷: Информация о канале {channel_name} отправлена боту.")
+                await self.event_queue.get()
 
                 # Теперь пересылаем само сообщение
                 forwarded_msg = await self.user_client.forward_messages(self.BOT_USERNAME, event.message)
-                print(f"Сообщение из канала {channel_name} переслано боту.")
+                print(f"🔷UserHandler🔷: Сообщение из канала {channel_name} переслано боту.")
+                await self.event_queue.get()
 
                 # Если пересланных сообщений несколько, собираем их id
-                if isinstance(forwarded_msg, list):
-                    msg_ids = [msg.id for msg in forwarded_msg]
-                else:
-                    msg_ids = [forwarded_msg.id]
-
-                msg_ids.append(channel_info_msg.id)
+                # if isinstance(forwarded_msg, list):
+                #     msg_ids = [msg.id for msg in forwarded_msg]
+                # else:
+                #     msg_ids = [forwarded_msg.id]
+                msg_ids = [forwarded_msg.id, channel_info_msg.id]
+                # msg_ids.append(channel_info_msg.id)
 
                 # Удаляем пересланное сообщение из чата с ботом (в вашем аккаунте)
-                await asyncio.sleep(0.5)
+                # await asyncio.sleep(0.5)
                 await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids, revoke=True)
-                print("Пересланное сообщение удалено из вашего аккаунта.")
+                print("🔷UserHandler🔷: Пересланное сообщение удалено из вашего аккаунта.")
             except Exception as e:
-                print("Ошибка при пересылке сообщения боту:", e)
+                print("🔷UserHandler🔷: Ошибка при пересылке сообщения боту:", e)
 
     async def start(self):
         await self.user_client.start()
-        print("Пользовательский клиент запущен.")
+        print("🔷UserHandler🔷: Пользовательский клиент запущен.")
 
     async def start_and_wait(self):
         await self.start()
