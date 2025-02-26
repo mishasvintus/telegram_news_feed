@@ -1,6 +1,7 @@
 .venv/
 .idea/
 config/
+src/__pycache__/
 keys.json
 all_channels.json
 channels.json
