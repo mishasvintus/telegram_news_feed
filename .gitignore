@@ -1,0 +1,6 @@
+.venv/
+.idea/
+keys.json
+all_channels.json
+channels.json
+*.session
