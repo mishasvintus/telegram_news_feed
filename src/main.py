@@ -4,7 +4,7 @@ from telethon import TelegramClient, events
 
 
 async def main():
-    with open("keys.json", "r", encoding="utf-8") as f:
+    with open("../config/keys.json", "r", encoding="utf-8") as f:
         config = json.load(f)
 
     API_ID = config["API_ID"]
@@ -13,7 +13,7 @@ async def main():
     TARGET_USER_ID = config["TARGET_USER_ID"]
     BOT_USERNAME = config["BOT_USERNAME"]
 
-    with open("all_channels.json", "r", encoding="utf-8") as f:
+    with open("../config/all_channels.json", "r", encoding="utf-8") as f:
         channels_config = json.load(f)
     channel_ids = [channel["id"] for channel in channels_config]
 

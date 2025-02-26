@@ -1,5 +1,6 @@
 .venv/
 .idea/
+config/
 keys.json
 all_channels.json
 channels.json

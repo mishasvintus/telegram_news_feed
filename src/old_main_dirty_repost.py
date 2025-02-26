@@ -5,7 +5,7 @@ import os
 from telethon import TelegramClient, events
 
 # Загружаем ключи и токены из keys.json
-with open("keys.json") as f:
+with open("../config/keys.json") as f:
     config = json.load(f)
 
 API_ID = config["API_ID"]
@@ -14,7 +14,7 @@ BOT_TOKEN = config["BOT_API_TOKEN"]
 USER_ID = config["USER_ID"]
 
 # Загружаем информацию о каналах из all_channels.json
-with open("all_channels.json") as f:
+with open("../config/all_channels.json") as f:
     channels_config = json.load(f)
 
 channels = channels_config
