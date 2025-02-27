@@ -110,6 +110,56 @@ On the first run:
 1. You'll be prompted to authenticate your user account. You will need to log in to the **source Telegram account**.
 2. `all_channels.json` and `subscribed_channels.json` will be automatically generated, containing all available channels.
 
+### Running the Bot in the Background:
+To run the bot in the background on Linux, you can use `tmux` to create a persistent session. This way, the bot will continue running even if you close the terminal.
+
+1. **Install `tmux`** if it's not already installed:
+
+   On Ubuntu/Debian-based systems:
+
+   ```bash
+   sudo apt update
+   sudo apt install tmux
+   ```
+
+   On CentOS/Fedora/RHEL-based systems:
+
+   ```bash
+   sudo yum install tmux
+   ```
+
+2. Start a new `tmux` session:
+
+   ```bash
+   tmux new-session -s telegram_feed_bot
+   ```
+
+3. Inside the `tmux` session, navigate to your bot's directory:
+
+   ```bash
+   cd /path/to/telegram_news_feed
+   ```
+
+4. Run the bot:
+
+   ```bash
+   python main.py
+   ```
+
+5. To detach from the `tmux` session (keeping the bot running), press `Ctrl + B`, then release both keys and press `D`.
+
+6. To reattach to the `tmux` session later, use:
+
+   ```bash
+   tmux attach-session -t telegram_feed_bot
+   ```
+
+7. If you want to kill the `tmux` session after you're done, run:
+
+   ```bash
+   tmux kill-session -t telegram_feed_bot
+   ```
+
 ---
 
 ## Bot Commands 🕹️
