@@ -20,7 +20,9 @@ class UserHandler:
 
         self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.lock = asyncio.Lock()
-        self.wait_for_ack = asyncio.Event()
+        self.ack_counter = 0
+        self.ack_counter_aim = 0
+        self.ack_event = asyncio.Event()
 
         self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)
 
@@ -35,9 +37,11 @@ class UserHandler:
                 try:
                     channel_name = event.chat.title if event.chat else "Неизвестный канал"
                     info_text = f"Сообщение из канала: 🔁 {channel_name}"
+
+                    self.prepare_wait_ack(acks_to_wake=1)
                     channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, info_text)
-                    self.wait_for_ack.clear()
-                    await self.wait_for_ack.wait()
+                    await self.wait_ack()
+
                     await self.user_client.delete_messages(self.BOT_USERNAME, [channel_info_msg.id], revoke=True)
 
                     if group_id is not None:
@@ -46,23 +50,29 @@ class UserHandler:
                     else:
                         msg_ids_to_forward = [event.message.id]
 
+                    self.prepare_wait_ack(acks_to_wake=len(msg_ids_to_forward))
                     forwarded_msgs = await self.user_client.forward_messages(
                         self.BOT_USERNAME,
                         msg_ids_to_forward,
                         from_peer=event.chat
                     )
+                    await self.wait_ack()
+
                     msg_ids_to_delete = [msg.id for msg in forwarded_msgs]
-
-                    for i in range(len(msg_ids_to_forward)):
-                        self.wait_for_ack.clear()
-                        await self.wait_for_ack.wait()
-
                     await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids_to_delete, revoke=True)
 
                 except Exception as e:
                     print(f"🔷UserHandler🔷: {e}")
         else:
             self.media_groups[group_id].append(event.message.id)
+
+    def prepare_wait_ack(self, acks_to_wake=0):
+        self.ack_counter = 0
+        self.ack_counter_aim = acks_to_wake
+        self.ack_event.clear()
+
+    async def wait_ack(self):
+        await self.ack_event.wait()
 
     async def reload_channels(self):
         with open("../config/channels.json", "r", encoding="utf-8") as f:
@@ -106,4 +116,8 @@ class UserHandler:
                 await self.initialize_all_channels()
                 await self.queue_to_bot.put("INITIALIZE_ACK")
             elif signal == "MSG_ACK":
-                self.wait_for_ack.set()
+                self.ack_counter += 1
+                if self.ack_counter >= self.ack_counter_aim:
+                    self.ack_event.set()
+                    self.ack_counter = 0
+                    self.ack_counter_aim = 0
