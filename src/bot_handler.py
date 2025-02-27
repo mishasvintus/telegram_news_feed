@@ -7,9 +7,9 @@ from telethon.tl.custom import Button
 
 
 class BotHandler:
-    def __init__(self, event_queue, control_queue, config_path="../config/keys.json"):
-        self.event_queue = event_queue
-        self.control_queue = control_queue
+    def __init__(self, queue_from_bot, queue_to_bot, config_path="../config/keys.json"):
+        self.queue_from_bot = queue_from_bot
+        self.queue_to_bot = queue_to_bot
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -25,6 +25,8 @@ class BotHandler:
         self.media_groups = {}
         self.channels_per_page = 15
         self.lock = asyncio.Lock()
+        self.reload_event = asyncio.Event()
+        self.initialize_event = asyncio.Event()
 
         self.bot_client.on(events.NewMessage())(self.handle_message)
         self.bot_client.on(events.CallbackQuery())(self.handle_callback_query)
@@ -59,7 +61,7 @@ class BotHandler:
             if event.message.text and event.message.text.startswith("Сообщение из канала:"):
                 message_text = event.message.text.replace("Сообщение из канала:", "").strip()
                 await self.bot_client.send_message(self.TARGET_USER_ID, message_text)
-                await self.event_queue.put("ACK")
+                await self.queue_from_bot.put("MSG_ACK")
                 return
             if group_id is not None:
                 await asyncio.sleep(0.5)
@@ -72,7 +74,7 @@ class BotHandler:
                 from_peer=event.chat
             )
             for i in range(len(msg_ids_to_forward)):
-                await self.event_queue.put("ACK")
+                await self.queue_from_bot.put("MSG_ACK")
         else:
             self.media_groups[group_id].append(event.message.id)
 
@@ -106,9 +108,12 @@ class BotHandler:
                             json.dump(channels, f, indent=4)
                         await self.bot_client.send_message(self.TARGET_USER_ID,
                                                            f"Канал {channel_to_add['name']} добавлен.")
-                        await self.put_signal("RELOAD_CHANNELS")
+                        await self.queue_from_bot.put("RELOAD_CHANNELS")
+                        self.reload_event.clear()
+                        await self.reload_event.wait()
 
                 except Exception as e:
+                    print(f"🔴BotHandler🔴: handle_command_message {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/remove_channel":
@@ -129,9 +134,12 @@ class BotHandler:
                         json.dump(channels, f, indent=4)
                     await self.bot_client.send_message(self.TARGET_USER_ID,
                                                        f"Канал {channel_to_remove['name']} удалён.")
-                    await self.put_signal("RELOAD_CHANNELS")
+                    await self.queue_from_bot.put("RELOAD_CHANNELS")
+                    self.reload_event.clear()
+                    await self.reload_event.wait()
 
                 except Exception as e:
+                    print(f"🔴BotHandler🔴: handle_command_message {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/list_subscribed_channels":
@@ -141,27 +149,31 @@ class BotHandler:
                     if subscribed_channels:
                         pages = [subscribed_channels[i:i + self.channels_per_page] for i in
                                  range(0, len(subscribed_channels), self.channels_per_page)]
-                        await self.send_page_function(event, pages, 0, "sub")
+                        await self.send_page_function(pages, 0, "sub")
                     else:
                         msg = "Нет доступных каналов."
                         await self.bot_client.send_message(self.TARGET_USER_ID, msg)
                 except Exception as e:
+                    print(f"🔴BotHandler🔴: handle_command_message {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/list_all_channels":
                 try:
-                    await self.put_signal("INITIALIZE_CHANNELS")
+                    await self.queue_from_bot.put("INITIALIZE_CHANNELS")
+                    self.initialize_event.clear()
+                    await self.initialize_event.wait()
 
                     with open("../config/all_channels.json", "r", encoding="utf-8") as f:
                         all_channels = json.load(f)
                     if all_channels:
                         pages = [all_channels[i:i + self.channels_per_page] for i in
                                  range(0, len(all_channels), self.channels_per_page)]
-                        await self.send_page_function(event, pages, 0, "all")
+                        await self.send_page_function(pages, 0, "all")
                     else:
                         msg = "Нет доступных каналов."
                         await self.bot_client.send_message(self.TARGET_USER_ID, msg)
                 except Exception as e:
+                    print(f"🔴BotHandler🔴: handle_command_message {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
     async def handle_callback_query(self, event):
@@ -187,6 +199,7 @@ class BotHandler:
             with open(path_to_channels, "r", encoding="utf-8") as f:
                 channels = json.load(f)
         except Exception as e:
+            print(f"🔴BotHandler🔴: handle_callback_query {e}")
             await event.answer(f"Ошибка загрузки списка: {e}", alert=True)
             return
 
@@ -197,10 +210,10 @@ class BotHandler:
         elif current_page >= len(pages):
             current_page = len(pages) - 1
 
-        await self.send_page_function(event, pages, current_page, list_type, event.message_id)
+        await self.send_page_function(pages, current_page, list_type, event.message_id)
         await event.answer()
 
-    async def send_page_function(self, event, pages, current_page, list_type, message_id=None):
+    async def send_page_function(self, pages, current_page, list_type, message_id=None):
         page = pages[current_page]
         first_index = current_page * self.channels_per_page + 1
         msg = "Список доступных каналов:\n"
@@ -221,10 +234,6 @@ class BotHandler:
         else:
             await self.bot_client.send_message(self.TARGET_USER_ID, msg, buttons=keyboard)
 
-    async def put_signal(self, signal):
-        await self.control_queue.put(signal)
-
-
     async def start(self):
         await self.bot_client.start(bot_token=self.BOT_TOKEN)
         await self.set_bot_commands()
@@ -233,4 +242,15 @@ class BotHandler:
 
     async def start_and_wait(self):
         await self.start()
-        await self.bot_client.run_until_disconnected()
+        await asyncio.gather(
+            self.bot_client.run_until_disconnected(),
+            self.listen_for_signals()
+        )
+
+    async def listen_for_signals(self):
+        while True:
+            signal = await self.queue_to_bot.get()
+            if signal == "RELOAD_ACK":
+                self.reload_event.set()
+            elif signal == "INITIALIZE_ACK":
+                self.initialize_event.set()
