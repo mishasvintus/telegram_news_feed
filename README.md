@@ -102,6 +102,7 @@ config/
 ## Running the Bot 🏃
 
 ```bash
+cd /path/to/telegram_news_feed/src
 python main.py
 ```
 
@@ -137,7 +138,7 @@ To run the bot in the background on Linux, you can use `tmux` to create a persis
 3. Inside the `tmux` session, navigate to your bot's directory:
 
    ```bash
-   cd /path/to/telegram_news_feed
+   cd /path/to/telegram_news_feed/src
    ```
 
 4. Run the bot:
