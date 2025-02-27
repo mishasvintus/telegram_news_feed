@@ -105,7 +105,7 @@ class UserHandler:
 
     async def start(self):
         await self.user_client.start()
-        self.initialize_all_channels()
+        await self.initialize_all_channels()
         self.reload_subscribed_channels()
         print("🔷UserHandler🔷: Пользовательский клиент запущен.")
 

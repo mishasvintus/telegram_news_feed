@@ -32,10 +32,9 @@ class BotHandler:
         self.lock = asyncio.Lock()
         self.reload_event = asyncio.Event()
         self.initialize_event = asyncio.Event()
-        with open(self.ALL_CHANNELS_PATH, "r", encoding="utf-8") as f:
-            self.all_channels_buffer = json.load(f)
-        with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
-            self.subscribed_channels_buffer = json.load(f)
+        self.all_channels_buffer = {}
+        self.subscribed_channels_buffer = {}
+
 
         self.bot_client = TelegramClient("bot_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.bot_client.on(events.NewMessage())(self.handle_message)
@@ -218,6 +217,8 @@ class BotHandler:
             msg = "**Список доступных каналов**\n"
         elif list_type == "sub":
             msg = "**Список отслеживаемых каналов**\n"
+        else:
+            msg = "**Неизвестный список**\n"
         msg += "\n".join(f"{first_index + idx}. {ch['name']} (ID: {ch['id']})" for idx, ch in enumerate(page))
 
         keyboard = []
@@ -238,6 +239,12 @@ class BotHandler:
     async def start(self):
         await self.bot_client.start(bot_token=self.BOT_TOKEN)
         await self.set_bot_commands()
+
+        with open(self.ALL_CHANNELS_PATH, "r", encoding="utf-8") as f:
+            self.all_channels_buffer = json.load(f)
+        with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
+            self.subscribed_channels_buffer = json.load(f)
+
         print("🔴BotHandler🔴: Бот-клиент запущен.")
 
     async def run_until_disconnected(self):
