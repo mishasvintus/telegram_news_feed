@@ -3,9 +3,10 @@ import json
 from telethon import events, TelegramClient
 
 class UserHandler:
-    def __init__(self, event_queue, config_path="../config/keys.json", channels_path="../config/channels.json"):
+    def __init__(self, event_queue, control_queue, config_path="../config/keys.json", channels_path="../config/channels.json"):
         self.event_queue = event_queue
-        # Словарь для накопления id сообщений по grouped_id
+        self.control_queue = control_queue
+
         self.media_groups = {}
 
         with open(config_path, "r", encoding="utf-8") as f:
@@ -23,6 +24,18 @@ class UserHandler:
 
         self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)
 
+    async def initialize_all_channels(self):
+        channels = dict()
+        dialogs = await self.user_client.get_dialogs()
+        for chat in dialogs:
+            if chat.is_channel:
+                channels[chat.title] = chat.id
+
+        formatted_channels = [{"name": key, "id": value} for key, value in channels.items()]
+
+        with open("../config/all_channels.json", "w", encoding="utf-8") as f:
+            json.dump(formatted_channels, f, ensure_ascii=False, indent=4)
+
     async def handle_channel_message(self, event):
         group_id = getattr(event.message, "grouped_id", None)
         if group_id is None or group_id not in self.media_groups:
@@ -30,12 +43,10 @@ class UserHandler:
                 print("заблокировался")
                 if group_id is not None and group_id not in self.media_groups:
                     self.media_groups[group_id] = [event.message.id]
-                print("🔷UserHandler🔷: Получено сообщение из канала.")
                 try:
                     channel_name = event.chat.title if event.chat else "Неизвестный канал"
                     info_text = f"Сообщение из канала: 🔁 {channel_name}"
                     channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, info_text)
-                    print(f"🔷UserHandler🔷: Информация о канале {channel_name} отправлена боту.")
                     await self.event_queue.get()
                     await self.user_client.delete_messages(self.BOT_USERNAME, [channel_info_msg.id], revoke=True)
 
@@ -57,17 +68,37 @@ class UserHandler:
 
                     await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids_to_delete, revoke=True)
 
-                    print(f"🔷UserHandler🔷: Сообщение из канала {channel_name} переслано боту.")
                 except Exception as e:
-                    print("🔷UserHandler🔷: Ошибка при обработке сообщения:", e)
+                    raise
         else:
             self.media_groups[group_id].append(event.message.id)
-            print(f"🔷UserHandler🔷: Сообщение с group_id {group_id} аккумулировано, обработка завершена.")
+
+    async def reload_channels(self):
+        with open("../config/channels.json", "r", encoding="utf-8") as f:
+            channels_config = json.load(f)
+        self.channel_ids = [channel["id"] for channel in channels_config]
+
+        self.user_client.remove_event_handler(self.handle_channel_message)
+        self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)
 
     async def start(self):
         await self.user_client.start()
+        await self.initialize_all_channels()
         print("🔷UserHandler🔷: Пользовательский клиент запущен.")
 
     async def start_and_wait(self):
         await self.start()
-        await self.user_client.run_until_disconnected()
+        await asyncio.gather(
+            self.user_client.run_until_disconnected(),
+            self.listen_for_signals()
+        )
+
+    async def listen_for_signals(self):
+        while True:
+            signal = await self.control_queue.get()
+            print(f"🔷UserHandler🔷: Получен сигнал {signal}")
+
+            if signal == "RELOAD_CHANNELS":
+                await self.reload_channels()
+            elif signal == "INITIALIZE_CHANNELS":
+                await self.initialize_all_channels()
