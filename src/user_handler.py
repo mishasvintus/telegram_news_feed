@@ -19,7 +19,7 @@ class UserHandler:
             channels_config = json.load(f)
         self.channel_ids = [channel["id"] for channel in channels_config]
 
-        self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH)
+        self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.lock = asyncio.Lock()
 
         self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)

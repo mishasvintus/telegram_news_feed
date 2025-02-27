@@ -20,7 +20,7 @@ class BotHandler:
         self.SOURCE_USER_ID = config["SOURCE_USER_ID"]
         self.TARGET_USER_ID = config["TARGET_USER_ID"]
 
-        self.bot_client = TelegramClient("bot_session", self.API_ID, self.API_HASH)
+        self.bot_client = TelegramClient("bot_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
 
         self.media_groups = {}
         self.channels_per_page = 15
