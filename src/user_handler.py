@@ -1,30 +1,35 @@
 import asyncio
 import json
+import os
 from telethon import events, TelegramClient
 
 class UserHandler:
-    def __init__(self, queue_from_bot, queue_to_bot, config_path="../config/keys.json", channels_path="../config/channels.json"):
+    def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json", subscribed_channels_path="../config/subscribed_channels.json", all_channels_path="../config/all_channels.json"):
+        if not os.path.exists(keys_path):
+            raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
+
+        try:
+            with open(keys_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            self.API_ID = config["API_ID"]
+            self.API_HASH = config["API_HASH"]
+            self.BOT_USERNAME = config["BOT_USERNAME"]
+        except Exception as e:
+            raise Exception(f"Some of keys in {keys_path} seems to be invalid: {e}")
+
+        self.SUBSRIBED_CHANNELS_PATH = subscribed_channels_path
+        self.ALL_CHANNELS_PATH = all_channels_path
+
         self.queue_from_bot = queue_from_bot
         self.queue_to_bot = queue_to_bot
         self.media_groups = {}
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        self.API_ID = config["API_ID"]
-        self.API_HASH = config["API_HASH"]
-        self.BOT_USERNAME = config["BOT_USERNAME"]
-
-        with open(channels_path, "r", encoding="utf-8") as f:
-            channels_config = json.load(f)
-        self.channel_ids = [channel["id"] for channel in channels_config]
-
-        self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
+        self.channel_ids = []
         self.lock = asyncio.Lock()
         self.ack_counter = 0
         self.ack_counter_aim = 0
         self.ack_event = asyncio.Event()
+        self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
 
-        self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)
 
     async def handle_channel_message(self, event):
         await self.user_client.send_read_acknowledge(event.chat_id, event.message)
@@ -74,8 +79,12 @@ class UserHandler:
     async def wait_ack(self):
         await self.ack_event.wait()
 
-    async def reload_channels(self):
-        with open("../config/channels.json", "r", encoding="utf-8") as f:
+    def reload_subscribed_channels(self):
+        if not os.path.exists(self.SUBSRIBED_CHANNELS_PATH):
+            with open(self.SUBSRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
+                json.dump([], f, ensure_ascii=False, indent=4)
+
+        with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
             channels_config = json.load(f)
         self.channel_ids = [channel["id"] for channel in channels_config]
 
@@ -91,16 +100,15 @@ class UserHandler:
 
         formatted_channels = [{"name": key, "id": value} for key, value in channels.items()]
 
-        with open("../config/all_channels.json", "w", encoding="utf-8") as f:
+        with open(self.ALL_CHANNELS_PATH, "w", encoding="utf-8") as f:
             json.dump(formatted_channels, f, ensure_ascii=False, indent=4)
 
     async def start(self):
         await self.user_client.start()
-        await self.initialize_all_channels()
+        self.reload_subscribed_channels()
         print("🔷UserHandler🔷: Пользовательский клиент запущен.")
 
-    async def start_and_wait(self):
-        await self.start()
+    async def run_until_disconnected(self):
         await asyncio.gather(
             self.user_client.run_until_disconnected(),
             self.listen_for_signals()
@@ -110,7 +118,7 @@ class UserHandler:
         while True:
             signal = await self.queue_from_bot.get()
             if signal == "RELOAD_CHANNELS":
-                await self.reload_channels()
+                self.reload_subscribed_channels()
                 await self.queue_to_bot.put("RELOAD_ACK")
             elif signal == "INITIALIZE_CHANNELS":
                 await self.initialize_all_channels()
@@ -119,5 +127,3 @@ class UserHandler:
                 self.ack_counter += 1
                 if self.ack_counter >= self.ack_counter_aim:
                     self.ack_event.set()
-                    self.ack_counter = 0
-                    self.ack_counter_aim = 0
