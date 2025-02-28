@@ -2,9 +2,13 @@ import asyncio
 import json
 import os
 from telethon import events, TelegramClient
+import datetime
+
 
 class UserHandler:
-    def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json", subscribed_channels_path="../config/subscribed_channels.json", all_channels_path="../config/all_channels.json"):
+    def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json",
+                 subscribed_channels_path="../config/subscribed_channels.json",
+                 all_channels_path="../config/all_channels.json"):
         if not os.path.exists(keys_path):
             raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
 
@@ -30,46 +34,60 @@ class UserHandler:
         self.ack_event = asyncio.Event()
         self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
 
-
     async def handle_channel_message(self, event):
         await self.user_client.send_read_acknowledge(event.chat_id, event.message)
         group_id = getattr(event.message, "grouped_id", None)
 
-        if group_id is None or group_id not in self.media_groups:
-            async with self.lock:
-                if group_id is not None and group_id not in self.media_groups:
-                    self.media_groups[group_id] = [event.message.id]
-                try:
-                    channel_name = event.chat.title if event.chat else "Неизвестный канал"
-                    info_text = f"Сообщение из канала:{channel_name}"
-
-                    self.prepare_wait_ack(acks_to_wake=1)
-                    channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, info_text)
-                    await self.wait_ack()
-
-                    await self.user_client.delete_messages(self.BOT_USERNAME, [channel_info_msg.id], revoke=True)
-
-                    if group_id is not None:
-                        await asyncio.sleep(0.5)
-                        msg_ids_to_forward = self.media_groups.pop(group_id, [])
-                    else:
-                        msg_ids_to_forward = [event.message.id]
-
-                    self.prepare_wait_ack(acks_to_wake=len(msg_ids_to_forward))
-                    forwarded_msgs = await self.user_client.forward_messages(
-                        self.BOT_USERNAME,
-                        msg_ids_to_forward,
-                        from_peer=event.chat
-                    )
-                    await self.wait_ack()
-
-                    msg_ids_to_delete = [msg.id for msg in forwarded_msgs]
-                    await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids_to_delete, revoke=True)
-
-                except Exception as e:
-                    print(f"🔷UserHandler🔷: {e}")
-        else:
+        if group_id is not None and group_id in self.media_groups:
             self.media_groups[group_id].append(event.message.id)
+            return
+
+        async with self.lock:
+            if group_id is not None:
+                self.media_groups[group_id] = [event.message.id]
+                await asyncio.sleep(0.5)
+                msg_ids_to_forward = self.media_groups.pop(group_id, [])
+            else:
+                msg_ids_to_forward = [event.message.id]
+
+            try:
+                await self.send_channel_info_msg(event)
+                await self.forward_messages(event.chat, msg_ids_to_forward)
+            except Exception as e:
+                print(f"{datetime.datetime.now()}\n🔷UserHandler🔷: handle_channel_message {e}")
+
+    async def send_channel_info_msg(self, event):
+        channel_name = event.chat.title if event.chat else "Неизвестный канал"
+        info_text = f"Сообщение из канала:{channel_name}"
+
+        self.prepare_wait_ack(acks_to_wake=1)
+        try:
+            channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, info_text)
+        except Exception as e:
+            raise Exception(f'🔷UserHandler🔷: send_channel_info_msg "{info_text}": {e}')
+
+        await self.wait_ack()
+        await self.user_client.delete_messages(self.BOT_USERNAME, [channel_info_msg.id])
+
+    async def forward_messages(self, chat, msg_ids_to_forward):
+        self.prepare_wait_ack(acks_to_wake=len(msg_ids_to_forward))
+        try:
+            forwarded_msgs = await self.user_client.forward_messages(
+                self.BOT_USERNAME,
+                msg_ids_to_forward,
+                from_peer=chat
+            )
+            if all(msg is None for msg in forwarded_msgs):
+                raise Exception("🔷UserHandler🔷: отправленные сообщения были удалены")
+        except Exception as e:
+            await self.queue_to_bot.put("DELETE_CHANNEL_INFO_MSG")
+            raise Exception(
+                f"🔷UserHandler🔷: error while forwarding msgs with ids {msg_ids_to_forward}, "
+                f"from '{chat.title}' with id: {chat.id}: {e}"
+            )
+        await self.wait_ack()
+        msg_ids_to_delete = [msg.id for msg in forwarded_msgs]
+        await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids_to_delete)
 
     def prepare_wait_ack(self, acks_to_wake=0):
         self.ack_counter = 0
@@ -107,7 +125,7 @@ class UserHandler:
         await self.user_client.start()
         await self.initialize_all_channels()
         self.reload_subscribed_channels()
-        print("🔷UserHandler🔷: Пользовательский клиент запущен.")
+        print(f"{datetime.datetime.now()}\n🔷UserHandler🔷: Пользовательский клиент запущен.")
 
     async def run_until_disconnected(self):
         await asyncio.gather(

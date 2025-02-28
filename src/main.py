@@ -2,6 +2,7 @@ import asyncio
 from user_handler import UserHandler
 from bot_handler import BotHandler
 
+
 async def main():
     queue_from_bot = asyncio.Queue()
     queue_to_bot = asyncio.Queue()
@@ -16,6 +17,7 @@ async def main():
         user_handler.run_until_disconnected(),
         bot_handler.run_until_disconnected()
     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -5,10 +5,14 @@ from telethon import events, TelegramClient, types
 from telethon.tl.functions.bots import SetBotCommandsRequest
 from telethon.tl.types import BotCommand
 from telethon.tl.custom import Button
+from collections import deque
+import datetime
 
 
 class BotHandler:
-    def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json", subscribed_channels_path="../config/subscribed_channels.json", all_channels_path="../config/all_channels.json"):
+    def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json",
+                 subscribed_channels_path="../config/subscribed_channels.json",
+                 all_channels_path="../config/all_channels.json"):
         if not os.path.exists(keys_path):
             raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
 
@@ -32,14 +36,13 @@ class BotHandler:
         self.lock = asyncio.Lock()
         self.reload_event = asyncio.Event()
         self.initialize_event = asyncio.Event()
-        self.all_channels_buffer = {}
-        self.subscribed_channels_buffer = {}
-
+        self.all_channels_buffer = []
+        self.subscribed_channels_buffer = []
+        self.channel_info_msgs_buffer = deque(maxlen=10)
 
         self.bot_client = TelegramClient("bot_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.bot_client.on(events.NewMessage())(self.handle_message)
         self.bot_client.on(events.CallbackQuery())(self.handle_callback_query)
-
 
     async def set_bot_commands(self):
         commands = [
@@ -65,29 +68,51 @@ class BotHandler:
             return
 
         group_id = getattr(event.message, "grouped_id", None)
-        if group_id is None or group_id not in self.media_groups:
+
+        if group_id is not None and group_id in self.media_groups:
+            self.media_groups[group_id].append(event.message.id)
+            return
+
+        if event.message.text and event.message.text.startswith("Сообщение из канала:"):
+            await self.send_channel_info_msg(event.message)
+            return
+
+        async with self.lock:
             if group_id is not None:
                 self.media_groups[group_id] = [event.message.id]
-            if event.message.text and event.message.text.startswith("Сообщение из канала:"):
-                message_text = event.message.text.replace("Сообщение из канала:", "").strip()
-                message_text = "🔁 **" + message_text + "**"
-                await self.bot_client.send_message(self.TARGET_USER_ID, message_text)
-                await self.queue_from_bot.put("MSG_ACK")
-                return
-            if group_id is not None:
                 await asyncio.sleep(0.5)
                 msg_ids_to_forward = self.media_groups.pop(group_id, [])
             else:
                 msg_ids_to_forward = [event.message.id]
-            await self.bot_client.forward_messages(
-                self.TARGET_USER_ID,
-                msg_ids_to_forward,
-                from_peer=event.chat
-            )
+
+            try:
+                await self.bot_client.forward_messages(
+                    self.TARGET_USER_ID,
+                    msg_ids_to_forward,
+                    from_peer=event.chat
+                )
+            except Exception as e:
+                print(
+                    f"{datetime.datetime.now()}\n🔴BotHandler🔴: error while forwarding msgs with ids {msg_ids_to_forward}, "
+                    f"from {event.chat}: {e}"
+                )
+
             for i in range(len(msg_ids_to_forward)):
                 await self.queue_from_bot.put("MSG_ACK")
-        else:
-            self.media_groups[group_id].append(event.message.id)
+
+    async def send_channel_info_msg(self, message):
+        message_text = message.text.replace("Сообщение из канала:", "").strip()
+        message_text = "🔁 **" + message_text + "**"
+        try:
+            channel_info_message = await self.bot_client.send_message(self.TARGET_USER_ID, message_text)
+            self.channel_info_msgs_buffer.append(channel_info_message)
+        except Exception as e:
+            print(
+                f'{datetime.datetime.now()}\n🔴BotHandler🔴: Ошибка при отправке подготовительного сообщения'
+                f'"{message_text}": {e}'
+            )
+        await self.queue_from_bot.put("MSG_ACK")
+        return
 
     async def handle_command_message(self, event):
         if event.message.text and event.message.text.startswith("/"):
@@ -119,7 +144,7 @@ class BotHandler:
                         await self.reload_event.wait()
 
                 except Exception as e:
-                    print(f"🔴BotHandler🔴: handle_command_message {e}")
+                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /add_channel {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/remove_channel":
@@ -143,7 +168,7 @@ class BotHandler:
                     await self.reload_event.wait()
 
                 except Exception as e:
-                    print(f"🔴BotHandler🔴: handle_command_message {e}")
+                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /remove_channel {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/subscribed_channels":
@@ -153,10 +178,9 @@ class BotHandler:
                                  range(0, len(self.subscribed_channels_buffer), self.channels_per_page)]
                         await self.send_page_function(pages, 0, "sub")
                     else:
-                        msg = "Нет доступных каналов."
-                        await self.bot_client.send_message(self.TARGET_USER_ID, msg)
+                        await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
                 except Exception as e:
-                    print(f"🔴BotHandler🔴: handle_command_message {e}")
+                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /subscribed_channels {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/all_channels":
@@ -166,10 +190,9 @@ class BotHandler:
                                  range(0, len(self.all_channels_buffer), self.channels_per_page)]
                         await self.send_page_function(pages, 0, "all")
                     else:
-                        msg = "Нет доступных каналов."
-                        await self.bot_client.send_message(self.TARGET_USER_ID, msg)
+                        await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
                 except Exception as e:
-                    print(f"🔴BotHandler🔴: handle_command_message {e}")
+                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /all_channels {e}")
                     await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
             elif cmd == "/refresh_channels":
@@ -231,11 +254,13 @@ class BotHandler:
 
         if len(keyboard) == 0:
             keyboard = None
-
-        if message_id:
-            await self.bot_client.edit_message(self.TARGET_USER_ID, message_id, msg, buttons=keyboard)
-        else:
-            await self.bot_client.send_message(self.TARGET_USER_ID, msg, buttons=keyboard)
+        try:
+            if message_id:
+                await self.bot_client.edit_message(self.TARGET_USER_ID, message_id, msg, buttons=keyboard)
+            else:
+                await self.bot_client.send_message(self.TARGET_USER_ID, msg, buttons=keyboard)
+        except Exception as e:
+            print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: send_page_function: {e}")
 
     async def start(self):
         await self.bot_client.start(bot_token=self.BOT_TOKEN)
@@ -246,7 +271,7 @@ class BotHandler:
         with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
             self.subscribed_channels_buffer = json.load(f)
 
-        print("🔴BotHandler🔴: Бот-клиент запущен.")
+        print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: Бот-клиент запущен.")
 
     async def run_until_disconnected(self):
         await asyncio.gather(
@@ -261,3 +286,11 @@ class BotHandler:
                 self.reload_event.set()
             elif signal == "INITIALIZE_ACK":
                 self.initialize_event.set()
+            elif signal == "DELETE_CHANNEL_INFO_MSG":
+                try:
+                    # chat = await self.bot_client.get_entity(self.TARGET_USER_ID)
+                    last_message = self.channel_info_msgs_buffer[-1]
+                    await self.bot_client.delete_messages(last_message.chat, last_message.id)
+                except Exception as e:
+                    print(
+                        f"{datetime.datetime.now()}\n🔴BotHandler🔴: DELETE_CHANNEL_INFO_MSG не получилось удалить сообщение: {e}")
