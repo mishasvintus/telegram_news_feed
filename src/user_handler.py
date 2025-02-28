@@ -41,7 +41,7 @@ class UserHandler:
                     self.media_groups[group_id] = [event.message.id]
                 try:
                     channel_name = event.chat.title if event.chat else "Неизвестный канал"
-                    info_text = f"Сообщение из канала: 🔁 {channel_name}"
+                    info_text = f"Сообщение из канала:{channel_name}"
 
                     self.prepare_wait_ack(acks_to_wake=1)
                     channel_info_msg = await self.user_client.send_message(self.BOT_USERNAME, info_text)

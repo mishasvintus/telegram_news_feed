@@ -70,6 +70,7 @@ class BotHandler:
                 self.media_groups[group_id] = [event.message.id]
             if event.message.text and event.message.text.startswith("Сообщение из канала:"):
                 message_text = event.message.text.replace("Сообщение из канала:", "").strip()
+                message_text = "🔁 **" + message_text + "**"
                 await self.bot_client.send_message(self.TARGET_USER_ID, message_text)
                 await self.queue_from_bot.put("MSG_ACK")
                 return
