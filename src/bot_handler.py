@@ -12,7 +12,8 @@ import datetime
 class BotHandler:
     def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json",
                  subscribed_channels_path="../config/subscribed_channels.json",
-                 all_channels_path="../config/all_channels.json"):
+                 all_channels_path="../config/all_channels.json",
+                 bot_session_path="../config/bot_session.session"):
         if not os.path.exists(keys_path):
             raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
 
@@ -40,7 +41,7 @@ class BotHandler:
         self.subscribed_channels_buffer = []
         self.channel_info_msgs_buffer = deque(maxlen=10)
 
-        self.bot_client = TelegramClient("bot_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
+        self.bot_client = TelegramClient(bot_session_path, self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.bot_client.on(events.NewMessage())(self.handle_message)
         self.bot_client.on(events.CallbackQuery())(self.handle_callback_query)
 

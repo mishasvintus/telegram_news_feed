@@ -10,7 +10,8 @@ class UserHandler:
     def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json",
                  subscribed_channels_path="../config/subscribed_channels.json",
                  all_channels_path="../config/all_channels.json",
-                 config_path="../config/config.json"):
+                 config_path="../config/config.json",
+                 user_session_path="../config/user_session.session"):
         if not os.path.exists(keys_path):
             raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
 
@@ -53,7 +54,7 @@ class UserHandler:
         self.ack_counter = 0
         self.ack_counter_aim = 0
         self.ack_event = asyncio.Event()
-        self.user_client = TelegramClient("user_session", self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
+        self.user_client = TelegramClient(user_session_path, self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
         self.unread_queue = asyncio.Queue()
 
         self.user_client.on(events.UserUpdate(chats=self.SOURCE_USER_ID))(self.handle_user_update)
