@@ -3,8 +3,14 @@
 .DS_Store
 config/
 src/__pycache__/
+*.session
+*.session-journal
+
 keys.json
 all_channels.json
 channels.json
-*.session
-*.session-journal
+
+
+!config_dir_example/keys.json
+!config_dir_example/channels.json
+
