@@ -102,7 +102,7 @@ class BotHandler:
 
     async def send_channel_info_msg(self, message):
         message_text = message.text.replace("Сообщение из канала:", "").strip()
-        message_text = "🔁 **" + message_text + "**"
+        message_text = "🔁 " + message_text
         try:
             channel_info_message = await self.bot_client.send_message(self.TARGET_USER_ID, message_text)
             self.channel_info_msgs_buffer.append(channel_info_message)
