@@ -27,7 +27,7 @@ class BotHandler:
         except Exception as e:
             raise Exception(f"Some of keys in {keys_path} seems to be invalid: {e}")
 
-        self.SUBSRIBED_CHANNELS_PATH = subscribed_channels_path
+        self.SUBSCRIBED_CHANNELS_PATH = subscribed_channels_path
         self.ALL_CHANNELS_PATH = all_channels_path
         self.queue_from_bot = queue_from_bot
         self.queue_to_bot = queue_to_bot
@@ -115,95 +115,114 @@ class BotHandler:
         return
 
     async def handle_command_message(self, event):
-        if event.message.text and event.message.text.startswith("/"):
-            command_parts = event.message.text.strip().split()
-            cmd = command_parts[0].lower()
+        if not event.message.text or not event.message.text.startswith("/"):
+            return
 
-            if cmd == "/add_channel":
-                if len(command_parts) < 2:
-                    await self.bot_client.send_message(self.TARGET_USER_ID,
-                                                       "Usage: /add_channel <channel_number>")
-                    return
-                try:
-                    channel_number = int(command_parts[1]) - 1
-                    if channel_number < 0 or channel_number >= len(self.all_channels_buffer):
-                        await self.bot_client.send_message(self.TARGET_USER_ID, "Неверный номер канала.")
-                        return
-                    channel_to_add = self.all_channels_buffer[channel_number]
+        command_parts = event.message.text.strip().split()
+        cmd = command_parts[0].lower()
 
-                    if any(ch["id"] == channel_to_add["id"] for ch in self.subscribed_channels_buffer):
-                        await self.bot_client.send_message(self.TARGET_USER_ID, "Этот канал уже добавлен.")
-                    else:
-                        self.subscribed_channels_buffer.append(channel_to_add)
-                        with open(self.SUBSRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
-                            json.dump(self.subscribed_channels_buffer, f, indent=4)
-                        await self.bot_client.send_message(self.TARGET_USER_ID,
-                                                           f"Канал {channel_to_add['name']} добавлен.")
-                        await self.queue_from_bot.put("RELOAD_CHANNELS")
-                        self.reload_event.clear()
-                        await self.reload_event.wait()
+        match cmd:
+            case "/add_channel":
+                await self.add_channel_command(command_parts)
+            case "/remove_channel":
+                await self.remove_channel_command(command_parts)
+            case "/subscribed_channels":
+                await self.subscribed_channels_command(command_parts)
+            case "/all_channels":
+                await self.all_channels_command(command_parts)
+            case "/refresh_channels":
+                await self.refresh_channels_command(command_parts)
+            case _:
+                await self.unknown_command(command_parts)
 
-                except Exception as e:
-                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /add_channel {e}")
-                    await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
+    async def add_channel_command(self, command_parts):
+        if len(command_parts) < 2:
+            await self.bot_client.send_message(self.TARGET_USER_ID,
+                                               "Usage: /add_channel <channel_number>")
+            return
+        try:
+            channel_number = int(command_parts[1]) - 1
+            if channel_number < 0 or channel_number >= len(self.all_channels_buffer):
+                await self.bot_client.send_message(self.TARGET_USER_ID, "Неверный номер канала.")
+                return
+            channel_to_add = self.all_channels_buffer[channel_number]
 
-            elif cmd == "/remove_channel":
-                if len(command_parts) < 2:
-                    await self.bot_client.send_message(self.TARGET_USER_ID,
-                                                       "Usage: /remove_channel <channel_number>")
-                    return
-                try:
-                    channel_number = int(command_parts[1]) - 1
-                    if channel_number < 0 or channel_number >= len(self.subscribed_channels_buffer):
-                        await self.bot_client.send_message(self.TARGET_USER_ID, "Неверный номер канала.")
-                        return
-                    channel_to_remove = self.subscribed_channels_buffer.pop(channel_number)
+            if any(ch["id"] == channel_to_add["id"] for ch in self.subscribed_channels_buffer):
+                await self.bot_client.send_message(self.TARGET_USER_ID, "Этот канал уже добавлен.")
+            else:
+                self.subscribed_channels_buffer.append(channel_to_add)
+                with open(self.SUBSCRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
+                    json.dump(self.subscribed_channels_buffer, f, indent=4)
+                await self.bot_client.send_message(self.TARGET_USER_ID,
+                                                   f"Канал {channel_to_add['name']} добавлен.")
+                await self.queue_from_bot.put("RELOAD_CHANNELS")
+                self.reload_event.clear()
+                await self.reload_event.wait()
 
-                    with open(self.SUBSRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
-                        json.dump(self.subscribed_channels_buffer, f, indent=4)
-                    await self.bot_client.send_message(self.TARGET_USER_ID,
-                                                       f"Канал {channel_to_remove['name']} удалён.")
-                    await self.queue_from_bot.put("RELOAD_CHANNELS")
-                    self.reload_event.clear()
-                    await self.reload_event.wait()
+        except Exception as e:
+            print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /add_channel {e}")
+            await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
-                except Exception as e:
-                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /remove_channel {e}")
-                    await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
+    async def remove_channel_command(self, command_parts):
+        if len(command_parts) < 2:
+            await self.bot_client.send_message(self.TARGET_USER_ID,
+                                               "Usage: /remove_channel <channel_number>")
+            return
+        try:
+            channel_number = int(command_parts[1]) - 1
+            if channel_number < 0 or channel_number >= len(self.subscribed_channels_buffer):
+                await self.bot_client.send_message(self.TARGET_USER_ID, "Неверный номер канала.")
+                return
+            channel_to_remove = self.subscribed_channels_buffer.pop(channel_number)
 
-            elif cmd == "/subscribed_channels":
-                try:
-                    if self.subscribed_channels_buffer:
-                        pages = [self.subscribed_channels_buffer[i:i + self.channels_per_page] for i in
-                                 range(0, len(self.subscribed_channels_buffer), self.channels_per_page)]
-                        await self.send_page_function(pages, 0, "sub")
-                    else:
-                        await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
-                except Exception as e:
-                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /subscribed_channels {e}")
-                    await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
+            with open(self.SUBSCRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.subscribed_channels_buffer, f, indent=4)
+            await self.bot_client.send_message(self.TARGET_USER_ID,
+                                               f"Канал {channel_to_remove['name']} удалён.")
+            await self.queue_from_bot.put("RELOAD_CHANNELS")
+            self.reload_event.clear()
+            await self.reload_event.wait()
 
-            elif cmd == "/all_channels":
-                try:
-                    if self.all_channels_buffer:
-                        pages = [self.all_channels_buffer[i:i + self.channels_per_page] for i in
-                                 range(0, len(self.all_channels_buffer), self.channels_per_page)]
-                        await self.send_page_function(pages, 0, "all")
-                    else:
-                        await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
-                except Exception as e:
-                    print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /all_channels {e}")
-                    await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
+        except Exception as e:
+            print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /remove_channel {e}")
+            await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
-            elif cmd == "/refresh_channels":
-                await self.queue_from_bot.put("INITIALIZE_CHANNELS")
-                self.initialize_event.clear()
-                await self.initialize_event.wait()
+    async def subscribed_channels_command(self, command_parts):
+        try:
+            if self.subscribed_channels_buffer:
+                pages = [self.subscribed_channels_buffer[i:i + self.channels_per_page] for i in
+                         range(0, len(self.subscribed_channels_buffer), self.channels_per_page)]
+                await self.send_page_function(pages, 0, "sub")
+            else:
+                await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
+        except Exception as e:
+            print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /subscribed_channels {e}")
+            await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
-                with open(self.ALL_CHANNELS_PATH, "r", encoding="utf-8") as f:
-                    self.all_channels_buffer = json.load(f)
+    async def all_channels_command(self, command_parts):
+        try:
+            if self.all_channels_buffer:
+                pages = [self.all_channels_buffer[i:i + self.channels_per_page] for i in
+                         range(0, len(self.all_channels_buffer), self.channels_per_page)]
+                await self.send_page_function(pages, 0, "all")
+            else:
+                await self.bot_client.send_message(self.TARGET_USER_ID, "Нет доступных каналов.")
+        except Exception as e:
+            print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /all_channels {e}")
+            await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
-                await self.bot_client.send_message(self.TARGET_USER_ID, "Список доступных каналов обновлен")
+    async def refresh_channels_command(self, command_parts):
+        await self.queue_from_bot.put("INITIALIZE_CHANNELS")
+        self.initialize_event.clear()
+        await self.initialize_event.wait()
+
+        with open(self.ALL_CHANNELS_PATH, "r", encoding="utf-8") as f:
+            self.all_channels_buffer = json.load(f)
+
+        await self.bot_client.send_message(self.TARGET_USER_ID, "Список доступных каналов обновлен")
+
+    async def unknown_command(self, command_parts):
+        await self.bot_client.send_message(self.TARGET_USER_ID, "Некорректная команда")
 
     async def handle_callback_query(self, event):
         query = event.query
@@ -268,7 +287,7 @@ class BotHandler:
 
         with open(self.ALL_CHANNELS_PATH, "r", encoding="utf-8") as f:
             self.all_channels_buffer = json.load(f)
-        with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
+        with open(self.SUBSCRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
             self.subscribed_channels_buffer = json.load(f)
 
         print(f"{datetime.datetime.now()}\n🔴BotHandler🔴: Бот-клиент запущен.")
