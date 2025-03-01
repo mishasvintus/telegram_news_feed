@@ -9,7 +9,8 @@ import datetime
 class UserHandler:
     def __init__(self, queue_from_bot, queue_to_bot, keys_path="../config/keys.json",
                  subscribed_channels_path="../config/subscribed_channels.json",
-                 all_channels_path="../config/all_channels.json"):
+                 all_channels_path="../config/all_channels.json",
+                 config_path="../config/config.json"):
         if not os.path.exists(keys_path):
             raise Exception(f"Invalid keys_path: {keys_path} doesn't exist")
 
@@ -23,6 +24,23 @@ class UserHandler:
             self.TARGET_USER_ID = config["TARGET_USER_ID"]
         except Exception as e:
             raise Exception(f"Some of keys in {keys_path} seems to be invalid: {e}")
+
+        if not os.path.exists(config_path):
+            config = {
+                "READ_NEW_POSTS": True,
+                "STAY_OFFLINE": True
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            self.READ_NEW_POSTS = config["READ_NEW_POSTS"]
+            self.STAY_OFFLINE = config["STAY_OFFLINE"]
+
+        except Exception as e:
+            raise Exception(f"Some of parameters in {config_path} seems to be invalid: {e}")
 
         self.SUBSRIBED_CHANNELS_PATH = subscribed_channels_path
         self.ALL_CHANNELS_PATH = all_channels_path
@@ -56,10 +74,10 @@ class UserHandler:
                 msgs_to_forward = [event.message]
 
             status = (await self.user_client.get_me()).status
-            if isinstance(status, UserStatusOnline):
-                await self.new_post_transmission(event.chat, msgs_to_forward)
-            else:
+            if self.STAY_OFFLINE and not isinstance(status, UserStatusOnline):
                 await self.unread_queue.put((event.chat, msgs_to_forward))
+            else:
+                await self.new_post_transmission(event.chat, msgs_to_forward)
 
     async def handle_user_update(self, event):
         if isinstance(event.status, UserStatusOnline):
@@ -69,7 +87,8 @@ class UserHandler:
 
     async def new_post_transmission(self, chat, msgs_to_forward):
         try:
-            await self.user_client.send_read_acknowledge(chat.id, msgs_to_forward)
+            if self.READ_NEW_POSTS:
+                await self.user_client.send_read_acknowledge(chat.id, msgs_to_forward)
             msg_date = msgs_to_forward[0].date + datetime.timedelta(hours=3)
             await self.send_channel_info_msg(chat, msg_date)
             await self.forward_messages(chat, msgs_to_forward)
