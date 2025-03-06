@@ -5,7 +5,7 @@
 A Telegram bot that aggregates news from your subscribed channels into a single news feed, similar to the way most
 social networks operate.
 
-- Built using **Telethon** (Telegram API) and **Telegram Bot API**.
+- Built using **Telethon** using both **Telegram API** **Telegram Bot API**.
 
 ---
 
