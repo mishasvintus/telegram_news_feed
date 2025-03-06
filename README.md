@@ -1,6 +1,6 @@
 ---
 
-# Telegram Feed Bot 🤖📰
+# Telegram Feed Bot 
 
 A Telegram bot that aggregates news from your subscribed channels into a single news feed, similar to the way most
 social networks operate.
@@ -9,7 +9,7 @@ social networks operate.
 
 ---
 
-## Features ✨
+## Features 
 
 - Automatically forwards new messages from subscribed channels to your personal chat.
 - Add/remove channels via bot commands.
@@ -19,7 +19,7 @@ social networks operate.
   configuration.
 - Bot can remain your account offline (not update status to online) during operation if configured.
 
-## Using Two Accounts (optional) 🧑‍🤝‍🧑
+### Using Two Accounts (optional) 
 
 You can use two accounts for this bot:
 
@@ -31,7 +31,7 @@ cluttering it with direct subscriptions.
 
 ---
 
-## Prerequisites 🛠️
+## Prerequisites 
 
 - Python 3.8+
 - Telegram API credentials
@@ -39,7 +39,7 @@ cluttering it with direct subscriptions.
 
 ---
 
-## Installation 📦
+## Installation 
 
 1. Clone the repository:
 
@@ -56,11 +56,11 @@ pip install telethon
 
 ---
 
-## Configuration ⚙️
+## Configuration 
 
 Create a `config` directory and the necessary files:
 
-### Directory Structure 📂
+### Directory Structure 
 
 ```
 config/
@@ -124,7 +124,7 @@ config/
 
 ---
 
-## Running the Bot 🏃
+## Running the Bot 
 
 ```bash
 cd /path/to/telegram_news_feed/src
@@ -191,7 +191,7 @@ continue running even if you close the terminal.
 
 ---
 
-## Bot Commands 🕹️
+## Bot Commands 
 
 | Command                                | Description                                |
 |----------------------------------------|--------------------------------------------|
@@ -203,7 +203,7 @@ continue running even if you close the terminal.
 
 ---
 
-## How It Works 🔧
+## How It Works 
 
 1. The **source Telegram account** monitors the subscribed channels for new messages.
 2. New messages from the monitored channels are forwarded to the bot in the background.
@@ -212,7 +212,7 @@ continue running even if you close the terminal.
 
 ---
 
-## Notes 📝
+## Notes 
 
 - The **source Telegram account** must be subscribed to the channels you want to subscribe to via the bot.
 
