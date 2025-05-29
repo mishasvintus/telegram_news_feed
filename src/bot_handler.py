@@ -3,7 +3,7 @@ import asyncio
 import os
 from telethon import events, TelegramClient, types
 from telethon.tl.functions.bots import SetBotCommandsRequest
-from telethon.tl.types import BotCommand
+from telethon.tl.types import BotCommand, BotCommandScopeDefault
 from telethon.tl.custom import Button
 from collections import deque
 import datetime
@@ -42,8 +42,8 @@ class BotHandler:
         self.channel_info_msgs_buffer = deque(maxlen=10)
 
         self.bot_client = TelegramClient(bot_session_path, self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
-        self.bot_client.on(events.NewMessage())(self.handle_message)
-        self.bot_client.on(events.CallbackQuery())(self.handle_callback_query)
+        self.bot_client.add_event_handler(self.handle_message, events.NewMessage())
+        self.bot_client.add_event_handler(self.handle_callback_query, events.CallbackQuery())
 
     async def set_bot_commands(self):
         commands = [
@@ -233,8 +233,7 @@ class BotHandler:
         await self.bot_client.send_message(self.TARGET_USER_ID, "Некорректная команда")
 
     async def handle_callback_query(self, event):
-        query = event.query
-        data = query.data.decode("utf-8")
+        data = event.data.decode("utf-8")
 
         if "_" in data:
             list_type, page_str = data.split("_")

@@ -2,7 +2,8 @@ import asyncio
 import json
 import os
 from telethon import events, TelegramClient
-from telethon.tl.types import UserStatusOnline
+from telethon.events import Raw
+from telethon.tl.types import UserStatusOnline, UpdateUserStatus
 import datetime
 
 
@@ -43,7 +44,7 @@ class UserHandler:
         except Exception as e:
             raise Exception(f"Some of parameters in {config_path} seems to be invalid: {e}")
 
-        self.SUBSRIBED_CHANNELS_PATH = subscribed_channels_path
+        self.SUBSCRIBED_CHANNELS_PATH = subscribed_channels_path
         self.ALL_CHANNELS_PATH = all_channels_path
 
         self.queue_from_bot = queue_from_bot
@@ -52,13 +53,22 @@ class UserHandler:
         self.channel_ids = []
         self.media_groups_lock = asyncio.Lock()
         self.unread_queue_lock = asyncio.Lock()
+        self.transmission_lock = asyncio.Lock()
         self.ack_counter = 0
         self.ack_counter_aim = 0
         self.ack_event = asyncio.Event()
-        self.user_client = TelegramClient(user_session_path, self.API_ID, self.API_HASH, system_version='4.16.30-vxCUSTOM')
+        self.user_client = TelegramClient(
+            user_session_path,
+            self.API_ID,
+            self.API_HASH,
+            system_version='4.16.30-vxCUSTOM'
+        )
         self.unread_queue = asyncio.Queue()
 
-        self.user_client.on(events.UserUpdate(chats=self.SOURCE_USER_ID))(self.handle_user_update)
+        self.user_client.add_event_handler(
+            self.handle_user_update,
+            Raw(UpdateUserStatus)
+        )
 
     async def handle_channel_message(self, event):
         group_id = getattr(event.message, "grouped_id", None)
@@ -72,10 +82,8 @@ class UserHandler:
                     self.media_groups[group_id] = [event.message]
                     asyncio.create_task(self.handle_group_messages_later(group_id, event.chat))
                     return
-            
-            
-        msgs = [event.message]
-        await self.process_messages(event, msgs)
+
+        await self.process_messages(event.chat, [event.message])
 
     async def handle_group_messages_later(self, group_id, chat):
         await asyncio.sleep(0.5)
@@ -93,28 +101,22 @@ class UserHandler:
             await self.unread_queue.put((chat, msgs))
         else:
             await self.new_post_transmission(chat, msgs)
-    
-    async def handle_user_update(self, event):
-        if isinstance(event.status, UserStatusOnline):
-            async with self.unread_queue_lock:
-                while not self.unread_queue.empty():
-                    chat, msgs_to_forward = await self.unread_queue.get()
-                    await self.new_post_transmission(chat, msgs_to_forward)
 
     async def new_post_transmission(self, chat, msgs_to_forward):
-        try:
-            if self.READ_NEW_POSTS:
-                await self.user_client.send_read_acknowledge(chat.id, msgs_to_forward)
-            msg_date = msgs_to_forward[0].date + datetime.timedelta(hours=3)
-            await self.send_channel_info_msg(chat, msg_date)
-            await self.forward_messages(chat, msgs_to_forward)
-        except Exception as e:
-            print(f"{datetime.datetime.now()}\n🔷UserHandler🔷: new_post_transmission {e}")
+        async with self.transmission_lock:
+            try:
+                if self.READ_NEW_POSTS:
+                    await self.user_client.send_read_acknowledge(chat.id)
+                msg_date = msgs_to_forward[0].date + datetime.timedelta(hours=3)
+                await self.send_channel_info_msg(chat, msg_date)
+                await self.forward_messages(chat, msgs_to_forward)
+            except Exception as e:
+                print(f"{datetime.datetime.now()}\n🔷UserHandler🔷: new_post_transmission {e}")
 
     async def send_channel_info_msg(self, chat, msg_date):
         channel_name = chat.title if chat else "Неизвестный канал"
 
-        info_text = f"Сообщение из канала:**{channel_name}**\n {msg_date.strftime("%H:%M")}"
+        info_text = f'Сообщение из канала:**{channel_name}**\n {msg_date.strftime("%H:%M")}'
 
         self.prepare_wait_ack(acks_to_wake=1)
         try:
@@ -143,8 +145,15 @@ class UserHandler:
                 f"from '{chat.title}' with id: {chat.id}: {e}"
             )
         await self.wait_ack()
-        msg_ids_to_delete = [msg.id for msg in forwarded_msgs]
+        msg_ids_to_delete = [msg.id for msg in forwarded_msgs if msg]
         await self.user_client.delete_messages(self.BOT_USERNAME, msg_ids_to_delete)
+
+    async def handle_user_update(self, update):
+        if update.user_id == self.SOURCE_USER_ID and isinstance(update.status, UserStatusOnline):
+            async with self.unread_queue_lock:
+                while not self.unread_queue.empty():
+                    chat, msgs_to_forward = await self.unread_queue.get()
+                    await self.new_post_transmission(chat, msgs_to_forward)
 
     def prepare_wait_ack(self, acks_to_wake=0):
         self.ack_counter = 0
@@ -155,16 +164,19 @@ class UserHandler:
         await self.ack_event.wait()
 
     def reload_subscribed_channels(self):
-        if not os.path.exists(self.SUBSRIBED_CHANNELS_PATH):
-            with open(self.SUBSRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
+        if not os.path.exists(self.SUBSCRIBED_CHANNELS_PATH):
+            with open(self.SUBSCRIBED_CHANNELS_PATH, "w", encoding="utf-8") as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
 
-        with open(self.SUBSRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
+        with open(self.SUBSCRIBED_CHANNELS_PATH, "r", encoding="utf-8") as f:
             channels_config = json.load(f)
         self.channel_ids = [channel["id"] for channel in channels_config]
 
         self.user_client.remove_event_handler(self.handle_channel_message)
-        self.user_client.on(events.NewMessage(chats=self.channel_ids))(self.handle_channel_message)
+        self.user_client.add_event_handler(
+            self.handle_channel_message,
+            events.NewMessage(chats=self.channel_ids)
+        )
 
     async def initialize_all_channels(self):
         channels = dict()
