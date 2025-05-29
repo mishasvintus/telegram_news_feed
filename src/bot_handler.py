@@ -56,6 +56,7 @@ class BotHandler:
         await self.bot_client(
             SetBotCommandsRequest(scope=types.BotCommandScopeDefault(), lang_code='en', commands=commands))
 
+
     async def handle_message(self, event):
         if event.message.text and event.message.text.startswith("/"):
             if event.sender_id != self.TARGET_USER_ID:
@@ -68,38 +69,44 @@ class BotHandler:
             await self.bot_client.send_message(event.sender_id, "Не присылай мне ничего")
             return
 
-        group_id = getattr(event.message, "grouped_id", None)
-
-        if group_id is not None and group_id in self.media_groups:
-            self.media_groups[group_id].append(event.message.id)
-            return
-
         if event.message.text and event.message.text.startswith("Сообщение из канала:"):
             await self.send_channel_info_msg(event.message)
             return
 
+        group_id = getattr(event.message, "grouped_id", None)
         async with self.lock:
             if group_id is not None:
-                self.media_groups[group_id] = [event.message.id]
-                await asyncio.sleep(0.5)
-                msg_ids_to_forward = self.media_groups.pop(group_id, [])
-            else:
-                msg_ids_to_forward = [event.message.id]
+                if group_id in self.media_groups:
+                    self.media_groups[group_id].append(event.message.id)
+                else:
+                    self.media_groups[group_id] = [event.message.id]
+                    asyncio.create_task(self.forward_group_later(group_id, event.chat))
+                return
 
-            try:
-                await self.bot_client.forward_messages(
-                    self.TARGET_USER_ID,
-                    msg_ids_to_forward,
-                    from_peer=event.chat
-                )
-            except Exception as e:
-                print(
-                    f"{datetime.datetime.now()}\n🔴BotHandler🔴: error while forwarding msgs with ids {msg_ids_to_forward}, "
-                    f"from {event.chat}: {e}"
-                )
+        await self.forward_messages(event.chat, [event.message.id])
 
-            for i in range(len(msg_ids_to_forward)):
-                await self.queue_from_bot.put("MSG_ACK")
+    async def forward_group_later(self, group_id, chat):
+        await asyncio.sleep(0.5)
+        async with self.lock:
+            msg_ids = self.media_groups.pop(group_id, None)
+            if not msg_ids:
+                return
+        await self.forward_messages(chat, msg_ids)
+
+    async def forward_messages(self, chat, msg_ids):
+        try:
+            await self.bot_client.forward_messages(
+                self.TARGET_USER_ID,
+                msg_ids,
+                from_peer=chat
+            )
+        except Exception as e:
+            print(
+                f"{datetime.datetime.now()}\n🔴BotHandler🔴: error while forwarding msgs {msg_ids} from {chat}: {e}"
+            )
+
+        for _ in range(len(msg_ids)):
+            await self.queue_from_bot.put("MSG_ACK")
 
     async def send_channel_info_msg(self, message):
         message_text = message.text.replace("Сообщение из канала:", "").strip()

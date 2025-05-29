@@ -50,7 +50,8 @@ class UserHandler:
         self.queue_to_bot = queue_to_bot
         self.media_groups = {}
         self.channel_ids = []
-        self.lock = asyncio.Lock()
+        self.media_groups_lock = asyncio.Lock()
+        self.unread_queue_lock = asyncio.Lock()
         self.ack_counter = 0
         self.ack_counter_aim = 0
         self.ack_event = asyncio.Event()
@@ -61,30 +62,44 @@ class UserHandler:
 
     async def handle_channel_message(self, event):
         group_id = getattr(event.message, "grouped_id", None)
-
-        if group_id is not None and group_id in self.media_groups:
-            self.media_groups[group_id].append(event.message)
-            return
-
-        async with self.lock:
+        
+        async with self.media_groups_lock:
             if group_id is not None:
-                self.media_groups[group_id] = [event.message]
-                await asyncio.sleep(0.5)
-                msgs_to_forward = self.media_groups.pop(group_id, [])
-            else:
-                msgs_to_forward = [event.message]
+                if group_id in self.media_groups:
+                    self.media_groups[group_id].append(event.message)
+                    return
+                else:
+                    self.media_groups[group_id] = [event.message]
+                    asyncio.create_task(self.handle_group_messages_later(group_id, event.chat))
+                    return
+            
+            
+        msgs = [event.message]
+        await self.process_messages(event, msgs)
 
-            status = (await self.user_client.get_me()).status
-            if self.STAY_OFFLINE and not isinstance(status, UserStatusOnline):
-                await self.unread_queue.put((event.chat, msgs_to_forward))
-            else:
-                await self.new_post_transmission(event.chat, msgs_to_forward)
-
+    async def handle_group_messages_later(self, group_id, chat):
+        await asyncio.sleep(0.5)
+        async with self.media_groups_lock:
+            msgs = self.media_groups.pop(group_id, None)
+            if not msgs:
+                return
+        await self.process_messages(chat, msgs)
+    
+    async def process_messages(self, chat, msgs):
+        if not msgs:
+            return
+        status = (await self.user_client.get_me()).status
+        if self.STAY_OFFLINE and not isinstance(status, UserStatusOnline):
+            await self.unread_queue.put((chat, msgs))
+        else:
+            await self.new_post_transmission(chat, msgs)
+    
     async def handle_user_update(self, event):
         if isinstance(event.status, UserStatusOnline):
-            while not self.unread_queue.empty():
-                chat, msgs_to_forward = await self.unread_queue.get()
-                await self.new_post_transmission(chat, msgs_to_forward)
+            async with self.unread_queue_lock:
+                while not self.unread_queue.empty():
+                    chat, msgs_to_forward = await self.unread_queue.get()
+                    await self.new_post_transmission(chat, msgs_to_forward)
 
     async def new_post_transmission(self, chat, msgs_to_forward):
         try:
