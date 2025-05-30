@@ -337,7 +337,7 @@ class BotHandler:
                 f"{datetime.datetime.now()}\n🔴BotHandler🔴: handle_command_message /all_channels {e}")
             await self.bot_client.send_message(self.TARGET_USER_ID, f"Ошибка: {e}")
 
-    async def refresh_channels_command(self, command_parts):
+    async def refresh_channels_command(self):
         await self.queue_from_bot.put("INITIALIZE_CHANNELS")
         self.initialize_event.clear()
         await self.initialize_event.wait()
@@ -361,7 +361,7 @@ class BotHandler:
             else:
                 await event.edit("Нет доступных каналов.", buttons=self.back_button())
         elif data == "refresh_channels":
-            await self.refresh_channels_command(["/refresh_channels"])
+            await self.refresh_channels_command()
             await event.answer("Список каналов обновлён!", alert=True)
         elif data == "back_to_menu":
             await self.show_main_menu(event, message=True)
@@ -481,7 +481,6 @@ class BotHandler:
                 self.initialize_event.set()
             elif signal == "DELETE_CHANNEL_INFO_MSG":
                 try:
-                    # chat = await self.bot_client.get_entity(self.TARGET_USER_ID)
                     last_message = self.channel_info_msgs_buffer[-1]
                     await self.bot_client.delete_messages(last_message.chat, last_message.id)
                 except Exception as e:
