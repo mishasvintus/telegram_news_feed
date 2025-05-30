@@ -191,15 +191,32 @@ continue running even if you close the terminal.
 
 ---
 
-## Bot Commands 
+## Bot Interface 
 
-| Command                                | Description                                |
-|----------------------------------------|--------------------------------------------|
-| `/add_channel <number_in_all_list>`    | Add a channel from the "all channels" list |
-| `/remove_channel <number_in_sub_list>` | Remove a subscribed channel                |
-| `/subscribed_channels`                 | Show your current subscriptions            |
-| `/all_channels`                        | Show all available channels                |
-| `/refresh_channels`                    | Refresh `all_channels.json`                |
+The bot now features a convenient interactive interface with button menus instead of text commands. This makes interacting with the bot much simpler and more intuitive.
+
+### Main Menu
+
+Start the bot with the `/start` command to open the main menu with buttons:
+
+| Button | Description |
+|--------|-------------|
+| **⚙️ Manage channels** | Manage subscriptions: add/remove channels with pagination (10 channels per page) |
+| **🔍 Search channels** | Search channels by name using inline query - just start typing `@your_bot_name channel_name` |
+| **📄 All channels** | View all available channels with pagination and "Subscribe" buttons |
+| **🔄 Refresh** | Refresh the list of all available channels |
+| **❌ Close** | Close the menu |
+
+### Inline Channel Search
+
+A particularly convenient feature - channel search in any chat:
+
+1. Type `@your_bot_name` (your bot's username)
+2. Add a space and start typing the channel name
+3. Select the desired channel from the dropdown list
+4. Use "➕ Subscribe" or "➖ Unsubscribe" buttons
+
+This method works in any Telegram chat and allows you to quickly manage subscriptions without switching to private messages with the bot.
 
 ---
 
